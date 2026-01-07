@@ -71,42 +71,42 @@ namespace PONPONLemon.UI
             UpdatePageDots();
         }
         
-        private IEnumerator AnimatePageTransition(int fromPage, int toPage)
-        {
-            isAnimating = true;
-            
-            float direction = toPage > fromPage ? -1 : 1;
-            
-            GameObject oldPageObj = pages[fromPage];
-            RectTransform oldRect = oldPageObj.GetComponent<RectTransform>();
-            Vector2 oldStartPos = oldRect.anchoredPosition;
-            Vector2 oldTargetPos = new Vector2(direction * 1200, 0);
-            
-            GameObject newPageObj = pages[toPage];
-            newPageObj.SetActive(true);
-            RectTransform newRect = newPageObj.GetComponent<RectTransform>();
-            Vector2 newStartPos = new Vector2(-direction * 1200, 0);
-            newRect.anchoredPosition = newStartPos;
-            
-            float elapsed = 0;
-            while (elapsed < slideSpeed)
-            {
-                elapsed += Time.deltaTime;
-                float t = elapsed / slideSpeed;
-                float easeT = 1 - Mathf.Pow(1 - t, 2);
-                
-                oldRect.anchoredPosition = Vector2.Lerp(oldStartPos, oldTargetPos, easeT);
-                newRect.anchoredPosition = Vector2.Lerp(newStartPos, Vector2.zero, easeT);
-                
-                yield return null;
-            }
-            
-            oldPageObj.SetActive(false);
-            oldRect.anchoredPosition = Vector2.zero;
-            newRect.anchoredPosition = Vector2.zero;
-            
-            isAnimating = false;
-        }
+private IEnumerator AnimatePageTransition(int fromPage, int toPage)
+{
+    isAnimating = true;
+    
+    float direction = toPage > fromPage ? -1 : 1;
+    
+    GameObject oldPageObj = pages[fromPage];
+    RectTransform oldRect = oldPageObj.GetComponent<RectTransform>();
+    Vector2 oldStartPos = oldRect.anchoredPosition;
+    Vector2 oldTargetPos = new Vector2(direction * 1200, 200);
+    
+    GameObject newPageObj = pages[toPage];
+    newPageObj.SetActive(true);
+    RectTransform newRect = newPageObj.GetComponent<RectTransform>();
+    Vector2 newStartPos = new Vector2(-direction * 1200, 200);
+    newRect.anchoredPosition = newStartPos;
+    
+    float elapsed = 0;
+    while (elapsed < slideSpeed)
+    {
+        elapsed += Time.deltaTime;
+        float t = elapsed / slideSpeed;
+        float easeT = 1 - Mathf.Pow(1 - t, 2);
+        
+        oldRect.anchoredPosition = Vector2.Lerp(oldStartPos, oldTargetPos, easeT);
+        newRect.anchoredPosition = Vector2.Lerp(newStartPos, new Vector2(0, 200), easeT);
+        
+        yield return null;
+    }
+    
+    oldPageObj.SetActive(false);
+    oldRect.anchoredPosition = new Vector2(0, 200);
+    newRect.anchoredPosition = new Vector2(0, 200);
+    
+    isAnimating = false;
+}
         
         private void UpdateNavigationButtons()
         {
