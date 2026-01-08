@@ -244,7 +244,7 @@ MonoBehaviour:
   howToPlayButton: {fileID: 1484749402}
   quitButton: {fileID: 1718588618}
   logoTransform: {fileID: 812479583}
-  bounceScale: 1.05
+  bounceScale: 0.8
   bounceSpeed: 2
 --- !u!4 &730068855
 Transform:
