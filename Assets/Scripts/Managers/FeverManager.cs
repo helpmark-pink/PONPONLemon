@@ -1,67 +1,41 @@
 using UnityEngine;
-using System;
+using UnityEngine.UI;
+using System.Collections;
 using PONPONLemon.Core;
 
 namespace PONPONLemon.Managers
 {
     public class FeverManager : MonoBehaviour
     {
-        public int FeverGauge { get; private set; }
-        public float FeverTimeRemaining { get; private set; }
-        public bool IsFeverActive { get; private set; }
-        public float GaugeRatio => (float)FeverGauge / GameConstants.FEVER_REQUIRED_COUNT;
-        public float FeverTimeRatio => FeverTimeRemaining / GameConstants.FEVER_DURATION;
-        public int FeverCount { get; private set; }
+        [Header("Fever Settings")]
+        [SerializeField] private float feverDuration = 10f;
+        [SerializeField] private float feverGaugeMax = 100f;
+        [SerializeField] private float gaugeIncreasePerTsum = 5f;
         
-        public event Action<int> OnGaugeChanged;
-        public event Action OnFeverStart;
-        public event Action OnFeverEnd;
-        public event Action<float> OnFeverTimeChanged;
-        public event Action OnGaugeFull;
+        [Header("UI")]
+        [SerializeField] private Slider feverGaugeSlider;
+        [SerializeField] private GameObject feverEffect;
         
+        private float currentGauge = 0f;
+        private bool isFeverActive = false;
         private bool isEnabled = true;
+        private int feverCount = 0;
         
-        public void ResetFever()
-        {
-            FeverGauge = 0;
-            FeverTimeRemaining = 0;
-            IsFeverActive = false;
-            FeverCount = 0;
-            OnGaugeChanged?.Invoke(FeverGauge);
-        }
+        public bool IsFeverActive => isFeverActive;
+        public float FeverGaugePercent => currentGauge / feverGaugeMax;
+        public float GaugeRatio => currentGauge / feverGaugeMax;
+        public int FeverCount => feverCount;
         
-        public void AddGauge(int amount)
-        {
-            if (!isEnabled) return;
-            
-            FeverGauge = Mathf.Min(FeverGauge + amount, GameConstants.FEVER_REQUIRED_COUNT);
-            OnGaugeChanged?.Invoke(FeverGauge);
-            
-            if (FeverGauge >= GameConstants.FEVER_REQUIRED_COUNT && !IsFeverActive)
-            {
-                OnGaugeFull?.Invoke();
-                StartFever();
-            }
-        }
+        public System.Action OnFeverStart;
+        public System.Action OnFeverEnd;
+        public System.Action<int> OnGaugeChanged;
+        public System.Action<float> OnFeverTimeChanged;
         
-        public void StartFever()
+        private void Start()
         {
-            if (IsFeverActive) return;
-            
-            IsFeverActive = true;
-            FeverTimeRemaining = GameConstants.FEVER_DURATION;
-            FeverGauge = 0;
-            FeverCount++;
-            
-            OnFeverStart?.Invoke();
-            OnGaugeChanged?.Invoke(FeverGauge);
-        }
-        
-        private void EndFever()
-        {
-            IsFeverActive = false;
-            FeverTimeRemaining = 0;
-            OnFeverEnd?.Invoke();
+            UpdateUI();
+            if (feverEffect != null)
+                feverEffect.SetActive(false);
         }
         
         public void SetEnabled(bool enabled)
@@ -69,15 +43,86 @@ namespace PONPONLemon.Managers
             isEnabled = enabled;
         }
         
-        private void Update()
+        public void AddGauge(int amount)
         {
-            if (!isEnabled || !IsFeverActive) return;
+            AddFeverGauge(amount);
+        }
+        
+        public void AddFeverGauge(int tsumCount)
+        {
+            if (isFeverActive || !isEnabled) return;
             
-            FeverTimeRemaining -= Time.deltaTime;
-            OnFeverTimeChanged?.Invoke(FeverTimeRatio);
+            currentGauge += gaugeIncreasePerTsum * tsumCount;
+            currentGauge = Mathf.Min(currentGauge, feverGaugeMax);
+            UpdateUI();
+            OnGaugeChanged?.Invoke((int)currentGauge);
             
-            if (FeverTimeRemaining <= 0)
-                EndFever();
+            if (currentGauge >= feverGaugeMax)
+            {
+                StartFever();
+            }
+        }
+        
+        public void StartFever()
+        {
+            if (isFeverActive) return;
+            
+            isFeverActive = true;
+            feverCount++;
+            currentGauge = feverGaugeMax;
+            UpdateUI();
+            
+            if (feverEffect != null)
+                feverEffect.SetActive(true);
+            
+            OnFeverStart?.Invoke();
+            StartCoroutine(FeverTimer());
+        }
+        
+        private IEnumerator FeverTimer()
+        {
+            float elapsed = 0;
+            while (elapsed < feverDuration)
+            {
+                elapsed += Time.deltaTime;
+                currentGauge = feverGaugeMax * (1 - elapsed / feverDuration);
+                UpdateUI();
+                OnFeverTimeChanged?.Invoke(1 - elapsed / feverDuration);
+                yield return null;
+            }
+            
+            EndFever();
+        }
+        
+        private void EndFever()
+        {
+            isFeverActive = false;
+            currentGauge = 0;
+            UpdateUI();
+            OnGaugeChanged?.Invoke(0);
+            
+            if (feverEffect != null)
+                feverEffect.SetActive(false);
+            
+            OnFeverEnd?.Invoke();
+        }
+        
+        private void UpdateUI()
+        {
+            if (feverGaugeSlider != null)
+                feverGaugeSlider.value = currentGauge / feverGaugeMax;
+        }
+        
+        public void ResetFever()
+        {
+            StopAllCoroutines();
+            isFeverActive = false;
+            currentGauge = 0;
+            feverCount = 0;
+            UpdateUI();
+            
+            if (feverEffect != null)
+                feverEffect.SetActive(false);
         }
     }
 }
