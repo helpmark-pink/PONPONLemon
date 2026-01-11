@@ -16,4 +16,14 @@ namespace PONPONLemon.Core
         Dropping,
         Popping
     }
+    
+    public enum GameState
+    {
+        Ready,
+        Countdown,
+        Playing,
+        Paused,
+        Fever,
+        Result
+    }
 }

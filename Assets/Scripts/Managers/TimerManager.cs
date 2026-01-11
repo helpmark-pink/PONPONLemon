@@ -1,82 +1,113 @@
 using UnityEngine;
-using System;
 using PONPONLemon.Core;
 
 namespace PONPONLemon.Managers
 {
     public class TimerManager : MonoBehaviour
     {
-        public float CurrentTime { get; private set; }
-        public float MaxTime { get; private set; }
-        public float TimeRatio => MaxTime > 0 ? CurrentTime / MaxTime : 0f;
-        public bool IsRunning { get; private set; }
-        public bool IsTimeUp => CurrentTime <= 0;
+        public static TimerManager Instance { get; private set; }
         
-        public event Action<float> OnTimeChanged;
-        public event Action OnTimeUp;
-        public event Action OnTimerStarted;
-        public event Action OnTimerPaused;
+        [Header("タイマー設定")]
+        [SerializeField] private float gameTime = GameConstants.GAME_TIME;
         
-        public void Initialize(float maxTime = -1)
+        private float remainingTime;
+        private bool isRunning = false;
+        
+        public float RemainingTime => remainingTime;
+        public float GameTime => gameTime;
+        public float TimeRatio => remainingTime / gameTime;
+        
+        // イベント
+        public System.Action<float> OnTimeChanged;
+        public System.Action OnTimeUp;
+        
+        private void Awake()
         {
-            MaxTime = maxTime > 0 ? maxTime : GameConstants.GAME_TIME;
-            CurrentTime = MaxTime;
-            IsRunning = false;
-            OnTimeChanged?.Invoke(CurrentTime);
+            if (Instance == null)
+            {
+                Instance = this;
+            }
+            else
+            {
+                Destroy(gameObject);
+            }
         }
         
-        public void StartTimer()
+        private void Start()
         {
-            if (IsTimeUp) return;
-            IsRunning = true;
-            OnTimerStarted?.Invoke();
+            ResetTimer();
+            
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.OnGameStateChanged += OnGameStateChanged;
+            }
         }
         
-        public void PauseTimer()
+        private void OnDestroy()
         {
-            IsRunning = false;
-            OnTimerPaused?.Invoke();
-        }
-        
-        public void ResumeTimer()
-        {
-            if (IsTimeUp) return;
-            IsRunning = true;
-        }
-        
-        public void ResetTimer()
-        {
-            CurrentTime = MaxTime;
-            IsRunning = false;
-            OnTimeChanged?.Invoke(CurrentTime);
-        }
-        
-        public void AddTime(float seconds)
-        {
-            CurrentTime = Mathf.Min(CurrentTime + seconds, MaxTime);
-            OnTimeChanged?.Invoke(CurrentTime);
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.OnGameStateChanged -= OnGameStateChanged;
+            }
         }
         
         private void Update()
         {
-            if (!IsRunning || IsTimeUp) return;
+            if (!isRunning) return;
             
-            CurrentTime -= Time.deltaTime;
+            remainingTime -= Time.deltaTime;
+            OnTimeChanged?.Invoke(remainingTime);
             
-            if (CurrentTime <= 0)
+            if (remainingTime <= 0)
             {
-                CurrentTime = 0;
-                IsRunning = false;
+                remainingTime = 0;
+                isRunning = false;
                 OnTimeUp?.Invoke();
+                
+                if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.EndGame();
+                }
             }
-            
-            OnTimeChanged?.Invoke(CurrentTime);
         }
         
-        public string GetFormattedTime()
+        public void ResetTimer()
         {
-            int seconds = Mathf.CeilToInt(CurrentTime);
-            return seconds.ToString();
+            remainingTime = gameTime;
+            isRunning = false;
+            OnTimeChanged?.Invoke(remainingTime);
+        }
+        
+        public void StartTimer()
+        {
+            isRunning = true;
+        }
+        
+        public void StopTimer()
+        {
+            isRunning = false;
+        }
+        
+        public void AddTime(float seconds)
+        {
+            remainingTime += seconds;
+            if (remainingTime > gameTime) remainingTime = gameTime;
+            OnTimeChanged?.Invoke(remainingTime);
+        }
+        
+        private void OnGameStateChanged(GameState state)
+        {
+            switch (state)
+            {
+                case GameState.Playing:
+                case GameState.Fever:
+                    StartTimer();
+                    break;
+                case GameState.Paused:
+                case GameState.Result:
+                    StopTimer();
+                    break;
+            }
         }
     }
 }

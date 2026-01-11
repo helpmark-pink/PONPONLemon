@@ -1,91 +1,101 @@
 using UnityEngine;
-using System;
 using PONPONLemon.Core;
 
 namespace PONPONLemon.Managers
 {
     public class ScoreManager : MonoBehaviour
     {
-        public int CurrentScore { get; private set; }
-        public int HighScore { get; private set; }
+        public static ScoreManager Instance { get; private set; }
+        
+        [Header("スコア")]
+        [SerializeField] private int currentScore = 0;
+        [SerializeField] private int highScore = 0;
+        
+        public int CurrentScore => currentScore;
+        public int HighScore => highScore;
         public bool IsNewRecord { get; private set; }
         
-        public event Action<int> OnScoreChanged;
-        public event Action<int> OnScoreAdded;
-        public event Action OnNewHighScore;
+        // イベント
+        public System.Action<int> OnScoreChanged;
+        public System.Action<int, Vector3> OnScorePopup;
+        
+        private void Awake()
+        {
+            if (Instance == null)
+            {
+                Instance = this;
+            }
+            else
+            {
+                Destroy(gameObject);
+            }
+        }
         
         private void Start()
         {
             LoadHighScore();
+            ResetScore();
         }
         
         public void ResetScore()
         {
-            CurrentScore = 0;
+            currentScore = 0;
             IsNewRecord = false;
-            OnScoreChanged?.Invoke(CurrentScore);
+            OnScoreChanged?.Invoke(currentScore);
         }
         
-        public void AddScore(int tsumCount, int chainCount, int combo, bool isFever)
+        public void AddScore(int chainCount, int combo, Vector3 position, bool isFever = false)
         {
-            int baseScore = tsumCount * GameConstants.BASE_SCORE_PER_TSUM;
+            if (chainCount < GameConstants.MIN_CHAIN_COUNT) return;
             
-            int chainBonus = 0;
-            if (chainCount > GameConstants.MIN_CHAIN_COUNT)
-            {
-                chainBonus = (chainCount - GameConstants.MIN_CHAIN_COUNT) * GameConstants.CHAIN_BONUS_PER_TSUM * tsumCount;
-            }
+            // 基本スコア計算
+            int baseScore = chainCount * GameConstants.BASE_SCORE_PER_TSUM;
+            int chainBonus = (chainCount - GameConstants.MIN_CHAIN_COUNT) * GameConstants.CHAIN_BONUS_PER_TSUM;
             
+            // コンボ倍率
             float comboMultiplier = GameConstants.GetComboMultiplier(combo);
+            
+            // フィーバー倍率
             float feverMultiplier = isFever ? GameConstants.FEVER_SCORE_MULTIPLIER : 1f;
             
-            int totalScore = Mathf.RoundToInt((baseScore + chainBonus) * comboMultiplier * feverMultiplier);
+            // 最終スコア
+            int addedScore = Mathf.RoundToInt((baseScore + chainBonus) * comboMultiplier * feverMultiplier);
             
-            CurrentScore += totalScore;
+            currentScore += addedScore;
+            OnScoreChanged?.Invoke(currentScore);
+            OnScorePopup?.Invoke(addedScore, position);
             
-            OnScoreAdded?.Invoke(totalScore);
-            OnScoreChanged?.Invoke(CurrentScore);
-            
-            CheckHighScore();
-        }
-        
-        private void CheckHighScore()
-        {
-            if (CurrentScore > HighScore)
+            // ハイスコア更新チェック
+            if (currentScore > highScore)
             {
-                HighScore = CurrentScore;
-                
-                if (!IsNewRecord)
-                {
-                    IsNewRecord = true;
-                    OnNewHighScore?.Invoke();
-                }
+                highScore = currentScore;
+                IsNewRecord = true;
+                SaveHighScore();
             }
         }
         
-        public void SaveHighScore()
+        public void AddScoreSimple(int score)
         {
-            PlayerPrefs.SetInt(GameConstants.KEY_HIGH_SCORE, HighScore);
-            PlayerPrefs.Save();
+            currentScore += score;
+            OnScoreChanged?.Invoke(currentScore);
+            
+            if (currentScore > highScore)
+            {
+                highScore = currentScore;
+                IsNewRecord = true;
+                SaveHighScore();
+            }
         }
         
         private void LoadHighScore()
         {
-            HighScore = PlayerPrefs.GetInt(GameConstants.KEY_HIGH_SCORE, 0);
+            highScore = PlayerPrefs.GetInt(GameConstants.KEY_HIGH_SCORE, 0);
         }
         
-        public int CalculateScorePreview(int tsumCount, int chainCount, int combo, bool isFever)
+        private void SaveHighScore()
         {
-            int baseScore = tsumCount * GameConstants.BASE_SCORE_PER_TSUM;
-            int chainBonus = 0;
-            if (chainCount > GameConstants.MIN_CHAIN_COUNT)
-            {
-                chainBonus = (chainCount - GameConstants.MIN_CHAIN_COUNT) * GameConstants.CHAIN_BONUS_PER_TSUM * tsumCount;
-            }
-            float comboMultiplier = GameConstants.GetComboMultiplier(combo);
-            float feverMultiplier = isFever ? GameConstants.FEVER_SCORE_MULTIPLIER : 1f;
-            
-            return Mathf.RoundToInt((baseScore + chainBonus) * comboMultiplier * feverMultiplier);
+            PlayerPrefs.SetInt(GameConstants.KEY_HIGH_SCORE, highScore);
+            PlayerPrefs.Save();
         }
     }
 }

@@ -1,317 +1,372 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using System.Collections;
 using System.Collections.Generic;
-using System;
 using PONPONLemon.Core;
+using PONPONLemon.Managers;
 
 namespace PONPONLemon.Tsum
 {
-    public class TsumManager : MonoBehaviour
+    public class TsumManager : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IDragHandler
     {
-        [Header("References")]
-        [SerializeField] private RectTransform playArea;
+        [Header("ツム設定")]
         [SerializeField] private GameObject tsumPrefab;
+        [SerializeField] private RectTransform playArea;
         [SerializeField] private Sprite[] tsumSprites;
+        
+        [Header("グリッド設定")]
+        [SerializeField] private int gridWidth = GameConstants.GRID_WIDTH;
+        [SerializeField] private int gridHeight = GameConstants.GRID_HEIGHT;
+        [SerializeField] private float tsumSize = GameConstants.TSUM_SIZE;
+        [SerializeField] private float tsumSpacing = GameConstants.TSUM_SPACING;
+        
+        [Header("チェーンライン")]
         [SerializeField] private LineRenderer chainLine;
+        [SerializeField] private Color chainLineColor = Color.yellow;
         
-        [Header("Settings")]
-        [SerializeField] private int gridWidth = 7;
-        [SerializeField] private int gridHeight = 9;
-        [SerializeField] private float tsumSize = 120f;
-        [SerializeField] private float tsumSpacing = 10f;
+        private TsumItem[,] grid;
+        private List<TsumItem> selectedChain = new List<TsumItem>();
+        private bool isDragging = false;
+        private Camera mainCamera;
         
-        private Tsum[,] grid;
-        private List<Tsum> selectedChain = new List<Tsum>();
-        private bool isDragging;
-        private bool canInput = true;
-        
-        public event Action<int, int> OnChainCompleted;
-        public event Action OnChainCancelled;
-        
-        private Vector2 gridOffset;
-        private float cellSize;
+        // イベント
+        public System.Action<int, Vector3> OnChainCompleted;
         
         private void Start()
         {
-            CalculateGridLayout();
+            mainCamera = Camera.main;
             InitializeGrid();
-        }
-        
-        private void CalculateGridLayout()
-        {
-            cellSize = tsumSize + tsumSpacing;
-            float totalWidth = gridWidth * cellSize;
-            float totalHeight = gridHeight * cellSize;
-            gridOffset = new Vector2(
-                -totalWidth / 2f + cellSize / 2f,
-                -totalHeight / 2f + cellSize / 2f
-            );
-        }
-        
-        public void InitializeGrid()
-        {
-            ClearAllTsums();
-            grid = new Tsum[gridWidth, gridHeight];
             
-            for (int x = 0; x < gridWidth; x++)
+            // ゲーム開始時にツムを配置
+            if (GameManager.Instance != null)
             {
-                for (int y = 0; y < gridHeight; y++)
+                GameManager.Instance.OnGameStart += OnGameStart;
+            }
+            
+            if (chainLine != null)
+            {
+                chainLine.startColor = chainLineColor;
+                chainLine.endColor = chainLineColor;
+                chainLine.startWidth = 10f;
+                chainLine.endWidth = 10f;
+                chainLine.positionCount = 0;
+            }
+        }
+        
+        private void OnDestroy()
+        {
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.OnGameStart -= OnGameStart;
+            }
+        }
+        
+        private void OnGameStart()
+        {
+            FillGrid();
+        }
+        
+        private void InitializeGrid()
+        {
+            grid = new TsumItem[gridWidth, gridHeight];
+        }
+        
+        private void FillGrid()
+        {
+            StartCoroutine(FillGridCoroutine());
+        }
+        
+        private IEnumerator FillGridCoroutine()
+        {
+            for (int y = 0; y < gridHeight; y++)
+            {
+                for (int x = 0; x < gridWidth; x++)
                 {
-                    SpawnTsum(x, y, true);
+                    if (grid[x, y] == null)
+                    {
+                        SpawnTsum(x, y, true);
+                        yield return new WaitForSeconds(GameConstants.TSUM_SPAWN_DELAY);
+                    }
                 }
             }
         }
         
-        private void ClearAllTsums()
+        private TsumItem SpawnTsum(int x, int y, bool animate = false)
         {
-            if (grid != null)
+            if (tsumPrefab == null || playArea == null) return null;
+            
+            GameObject tsumObj = Instantiate(tsumPrefab, playArea);
+            TsumItem tsum = tsumObj.GetComponent<TsumItem>();
+            
+            if (tsum == null)
             {
-                foreach (var tsum in grid)
-                {
-                    if (tsum != null)
-                        tsum.DestroyImmediate();
-                }
-            }
-            selectedChain.Clear();
-        }
-        
-        private Tsum SpawnTsum(int gridX, int gridY, bool instant = false)
-        {
-            if (tsumPrefab == null || tsumSprites == null || tsumSprites.Length == 0)
-            {
-                Debug.LogError("Tsum prefab or sprites not set!");
-                return null;
+                tsum = tsumObj.AddComponent<TsumItem>();
             }
             
-            GameObject obj = Instantiate(tsumPrefab, playArea);
-            Tsum tsum = obj.GetComponent<Tsum>();
-            
-            int typeIndex = UnityEngine.Random.Range(0, Mathf.Min(GameConstants.TSUM_TYPES, tsumSprites.Length));
+            // ランダムなタイプを選択
+            int typeIndex = Random.Range(0, Mathf.Min(GameConstants.TSUM_TYPES, tsumSprites.Length));
             TsumType type = (TsumType)typeIndex;
+            Sprite sprite = tsumSprites.Length > typeIndex ? tsumSprites[typeIndex] : null;
             
-            tsum.Initialize(type, tsumSprites[typeIndex], gridX, gridY);
+            tsum.Initialize(type, sprite, x, y);
             
-            Vector2 targetPos = GridToPosition(gridX, gridY);
+            // 位置設定
+            RectTransform rectTransform = tsumObj.GetComponent<RectTransform>();
+            Vector2 targetPos = GetGridPosition(x, y);
             
-            if (instant)
+            if (animate)
             {
-                tsum.MoveTo(targetPos, true);
+                // 上から落下アニメーション
+                Vector2 startPos = new Vector2(targetPos.x, playArea.rect.height + tsumSize);
+                rectTransform.anchoredPosition = startPos;
+                tsum.DropTo(targetPos, GameConstants.TSUM_DROP_SPEED);
             }
             else
             {
-                Vector2 startPos = GridToPosition(gridX, gridHeight + 1);
-                tsum.MoveTo(startPos, true);
-                tsum.MoveTo(targetPos, false);
+                rectTransform.anchoredPosition = targetPos;
             }
             
-            grid[gridX, gridY] = tsum;
+            rectTransform.sizeDelta = new Vector2(tsumSize, tsumSize);
+            
+            grid[x, y] = tsum;
+            
             return tsum;
         }
         
-        private Vector2 GridToPosition(int gridX, int gridY)
+        private Vector2 GetGridPosition(int x, int y)
         {
-            return new Vector2(
-                gridOffset.x + gridX * cellSize,
-                gridOffset.y + gridY * cellSize
-            );
-        }
-        
-        private Vector2Int PositionToGrid(Vector2 position)
-        {
-            int x = Mathf.FloorToInt((position.x - gridOffset.x + cellSize / 2f) / cellSize);
-            int y = Mathf.FloorToInt((position.y - gridOffset.y + cellSize / 2f) / cellSize);
-            return new Vector2Int(x, y);
-        }
-        
-        private bool IsValidGridPosition(int x, int y)
-        {
-            return x >= 0 && x < gridWidth && y >= 0 && y < gridHeight;
-        }
-        
-        private void Update()
-        {
-            if (!canInput) return;
+            float totalWidth = gridWidth * (tsumSize + tsumSpacing) - tsumSpacing;
+            float totalHeight = gridHeight * (tsumSize + tsumSpacing) - tsumSpacing;
             
-            if (Input.GetMouseButtonDown(0))
-            {
-                OnPointerDown(Input.mousePosition);
-            }
-            else if (Input.GetMouseButton(0) && isDragging)
-            {
-                OnPointerMove(Input.mousePosition);
-            }
-            else if (Input.GetMouseButtonUp(0) && isDragging)
-            {
-                OnPointerUp();
-            }
+            float startX = (playArea.rect.width - totalWidth) / 2f;
+            float startY = (playArea.rect.height - totalHeight) / 2f;
+            
+            float posX = startX + x * (tsumSize + tsumSpacing) + tsumSize / 2f;
+            float posY = startY + y * (tsumSize + tsumSpacing) + tsumSize / 2f;
+            
+            return new Vector2(posX, posY);
         }
         
-        private void OnPointerDown(Vector2 screenPosition)
+        private TsumItem GetTsumAtPosition(Vector2 screenPosition)
         {
             Vector2 localPoint;
             RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                playArea, screenPosition, null, out localPoint);
+                playArea, screenPosition, mainCamera, out localPoint);
             
-            Vector2Int gridPos = PositionToGrid(localPoint);
+            // ローカル座標からグリッド座標を計算
+            float totalWidth = gridWidth * (tsumSize + tsumSpacing) - tsumSpacing;
+            float totalHeight = gridHeight * (tsumSize + tsumSpacing) - tsumSpacing;
             
-            if (IsValidGridPosition(gridPos.x, gridPos.y))
+            float startX = (playArea.rect.width - totalWidth) / 2f;
+            float startY = (playArea.rect.height - totalHeight) / 2f;
+            
+            int gridX = Mathf.FloorToInt((localPoint.x - startX) / (tsumSize + tsumSpacing));
+            int gridY = Mathf.FloorToInt((localPoint.y - startY) / (tsumSize + tsumSpacing));
+            
+            if (gridX >= 0 && gridX < gridWidth && gridY >= 0 && gridY < gridHeight)
             {
-                Tsum tsum = grid[gridPos.x, gridPos.y];
-                if (tsum != null && tsum.State == TsumState.Idle)
-                {
-                    isDragging = true;
-                    selectedChain.Clear();
-                    SelectTsum(tsum);
-                }
+                return grid[gridX, gridY];
+            }
+            
+            return null;
+        }
+        
+        #region タッチ入力
+        
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            if (GameManager.Instance != null && !GameManager.Instance.IsPlaying())
+                return;
+            
+            isDragging = true;
+            selectedChain.Clear();
+            
+            TsumItem tsum = GetTsumAtPosition(eventData.position);
+            if (tsum != null)
+            {
+                AddToChain(tsum);
             }
         }
         
-        private void OnPointerMove(Vector2 screenPosition)
+        public void OnDrag(PointerEventData eventData)
         {
-            Vector2 localPoint;
-            RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                playArea, screenPosition, null, out localPoint);
+            if (!isDragging) return;
+            if (GameManager.Instance != null && !GameManager.Instance.IsPlaying())
+                return;
             
-            Vector2Int gridPos = PositionToGrid(localPoint);
-            
-            if (IsValidGridPosition(gridPos.x, gridPos.y))
+            TsumItem tsum = GetTsumAtPosition(eventData.position);
+            if (tsum != null && !selectedChain.Contains(tsum))
             {
-                Tsum tsum = grid[gridPos.x, gridPos.y];
-                if (tsum != null && tsum.State == TsumState.Idle && !tsum.IsSelected)
+                // 最後に選択したツムと隣接していて同じタイプかチェック
+                if (selectedChain.Count > 0)
                 {
-                    TryAddToChain(tsum);
+                    TsumItem lastTsum = selectedChain[selectedChain.Count - 1];
+                    if (tsum.IsAdjacent(lastTsum) && tsum.IsSameType(lastTsum))
+                    {
+                        AddToChain(tsum);
+                    }
                 }
-                else if (tsum != null && tsum.IsSelected && selectedChain.Count > 1)
-                {
-                    TryRemoveFromChain(tsum);
-                }
+            }
+            // 一つ前のツムに戻った場合は選択解除
+            else if (tsum != null && selectedChain.Count > 1 && tsum == selectedChain[selectedChain.Count - 2])
+            {
+                RemoveLastFromChain();
             }
             
             UpdateChainLine();
         }
         
-        private void OnPointerUp()
+        public void OnPointerUp(PointerEventData eventData)
         {
+            if (!isDragging) return;
+            
             isDragging = false;
             
             if (selectedChain.Count >= GameConstants.MIN_CHAIN_COUNT)
             {
-                StartCoroutine(ProcessChain());
+                // チェーン成功
+                CompleteChain();
             }
             else
             {
-                CancelChain();
+                // チェーン失敗 - 選択解除
+                ClearChain();
             }
             
             ClearChainLine();
         }
         
-        private void SelectTsum(Tsum tsum)
+        #endregion
+        
+        #region チェーン処理
+        
+        private void AddToChain(TsumItem tsum)
         {
-            tsum.Select();
             selectedChain.Add(tsum);
+            tsum.SetSelected(true);
+            UpdateChainLine();
         }
         
-        private void TryAddToChain(Tsum tsum)
+        private void RemoveLastFromChain()
         {
-            if (selectedChain.Count == 0) return;
-            
-            Tsum lastTsum = selectedChain[selectedChain.Count - 1];
-            
-            if (tsum.IsSameType(lastTsum) && tsum.IsAdjacent(lastTsum))
+            if (selectedChain.Count > 0)
             {
-                SelectTsum(tsum);
+                TsumItem lastTsum = selectedChain[selectedChain.Count - 1];
+                lastTsum.SetSelected(false);
+                selectedChain.RemoveAt(selectedChain.Count - 1);
             }
         }
         
-        private void TryRemoveFromChain(Tsum tsum)
+        private void ClearChain()
         {
-            int index = selectedChain.IndexOf(tsum);
-            if (index >= 0 && index < selectedChain.Count - 1)
+            foreach (TsumItem tsum in selectedChain)
             {
-                for (int i = selectedChain.Count - 1; i > index; i--)
+                if (tsum != null)
                 {
-                    selectedChain[i].Deselect();
-                    selectedChain.RemoveAt(i);
+                    tsum.SetSelected(false);
                 }
             }
-        }
-        
-        private void CancelChain()
-        {
-            foreach (var tsum in selectedChain)
-            {
-                tsum.Deselect();
-            }
             selectedChain.Clear();
-            OnChainCancelled?.Invoke();
         }
         
-        private IEnumerator ProcessChain()
+        private void CompleteChain()
         {
-            canInput = false;
-            
             int chainCount = selectedChain.Count;
-            int tsumCount = chainCount;
             
-            foreach (var tsum in selectedChain)
+            // チェーンの中心位置を計算
+            Vector3 centerPos = Vector3.zero;
+            foreach (TsumItem tsum in selectedChain)
             {
-                grid[tsum.GridX, tsum.GridY] = null;
+                centerPos += tsum.transform.position;
+            }
+            centerPos /= chainCount;
+            
+            // ツムを消す
+            foreach (TsumItem tsum in selectedChain)
+            {
+                int x = tsum.GridX;
+                int y = tsum.GridY;
+                grid[x, y] = null;
                 tsum.Pop();
             }
             
-            OnChainCompleted?.Invoke(tsumCount, chainCount);
-            
-            yield return new WaitForSeconds(GameConstants.TSUM_POP_DURATION);
-            
             selectedChain.Clear();
             
-            yield return StartCoroutine(DropTsums());
-            yield return StartCoroutine(FillGrid());
-            
-            canInput = true;
-        }
-        
-        private IEnumerator DropTsums()
-        {
-            bool hasMoved = true;
-            
-            while (hasMoved)
+            // スコア加算
+            if (ScoreManager.Instance != null && ComboManager.Instance != null)
             {
-                hasMoved = false;
-                
-                for (int x = 0; x < gridWidth; x++)
-                {
-                    for (int y = 0; y < gridHeight - 1; y++)
-                    {
-                        if (grid[x, y] == null)
-                        {
-                            for (int searchY = y + 1; searchY < gridHeight; searchY++)
-                            {
-                                if (grid[x, searchY] != null)
-                                {
-                                    Tsum tsum = grid[x, searchY];
-                                    grid[x, searchY] = null;
-                                    grid[x, y] = tsum;
-                                    tsum.GridY = y;
-                                    tsum.MoveTo(GridToPosition(x, y));
-                                    hasMoved = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                if (hasMoved)
-                    yield return new WaitForSeconds(0.05f);
+                bool isFever = FeverManager.Instance != null && FeverManager.Instance.IsFeverActive;
+                ScoreManager.Instance.AddScore(chainCount, ComboManager.Instance.CurrentCombo, centerPos, isFever);
             }
             
-            yield return new WaitForSeconds(0.2f);
+            // コンボ加算
+            if (ComboManager.Instance != null)
+            {
+                ComboManager.Instance.AddCombo();
+            }
+            
+            // フィーバーゲージ加算
+            if (FeverManager.Instance != null)
+            {
+                FeverManager.Instance.AddCount(chainCount);
+            }
+            
+            // イベント発火
+            OnChainCompleted?.Invoke(chainCount, centerPos);
+            
+            // ツムを落下させて補充
+            StartCoroutine(DropAndRefill());
         }
         
-        private IEnumerator FillGrid()
+        private IEnumerator DropAndRefill()
+        {
+            yield return new WaitForSeconds(GameConstants.TSUM_POP_DURATION);
+            
+            // 各列のツムを落下
+            for (int x = 0; x < gridWidth; x++)
+            {
+                DropColumn(x);
+            }
+            
+            yield return new WaitForSeconds(0.3f);
+            
+            // 空いた場所を補充
+            RefillGrid();
+        }
+        
+        private void DropColumn(int x)
+        {
+            int emptyY = -1;
+            
+            for (int y = 0; y < gridHeight; y++)
+            {
+                if (grid[x, y] == null)
+                {
+                    if (emptyY < 0) emptyY = y;
+                }
+                else if (emptyY >= 0)
+                {
+                    // ツムを下に移動
+                    TsumItem tsum = grid[x, y];
+                    grid[x, emptyY] = tsum;
+                    grid[x, y] = null;
+                    
+                    tsum.SetGridPosition(x, emptyY);
+                    Vector2 targetPos = GetGridPosition(x, emptyY);
+                    tsum.DropTo(targetPos, GameConstants.TSUM_DROP_SPEED);
+                    
+                    emptyY++;
+                }
+            }
+        }
+        
+        private void RefillGrid()
+        {
+            StartCoroutine(RefillGridCoroutine());
+        }
+        
+        private IEnumerator RefillGridCoroutine()
         {
             for (int x = 0; x < gridWidth; x++)
             {
@@ -319,44 +374,40 @@ namespace PONPONLemon.Tsum
                 {
                     if (grid[x, y] == null)
                     {
-                        SpawnTsum(x, y, false);
-                        yield return new WaitForSeconds(GameConstants.TSUM_SPAWN_DELAY);
+                        SpawnTsum(x, y, true);
+                        yield return new WaitForSeconds(GameConstants.TSUM_SPAWN_DELAY * 0.5f);
                     }
                 }
             }
-            
-            yield return new WaitForSeconds(0.3f);
         }
+        
+        #endregion
+        
+        #region チェーンライン
         
         private void UpdateChainLine()
         {
-            if (chainLine == null || selectedChain.Count == 0) return;
+            if (chainLine == null) return;
             
             chainLine.positionCount = selectedChain.Count;
             
             for (int i = 0; i < selectedChain.Count; i++)
             {
-                Vector3 worldPos = selectedChain[i].transform.position;
-                chainLine.SetPosition(i, worldPos);
+                if (selectedChain[i] != null)
+                {
+                    chainLine.SetPosition(i, selectedChain[i].transform.position);
+                }
             }
         }
         
         private void ClearChainLine()
         {
             if (chainLine != null)
-                chainLine.positionCount = 0;
-        }
-        
-        public void SetInputEnabled(bool enabled)
-        {
-            canInput = enabled;
-            
-            if (!enabled)
             {
-                CancelChain();
-                ClearChainLine();
-                isDragging = false;
+                chainLine.positionCount = 0;
             }
         }
+        
+        #endregion
     }
 }

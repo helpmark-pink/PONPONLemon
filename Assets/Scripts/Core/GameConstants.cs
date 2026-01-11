@@ -4,33 +4,48 @@ namespace PONPONLemon.Core
 {
     public static class GameConstants
     {
+        // ゲーム時間
         public const float GAME_TIME = 60f;
+        
+        // チェーン
         public const int MIN_CHAIN_COUNT = 3;
         public const float COMBO_TIME_LIMIT = 2f;
         
+        // フィーバー
         public const int FEVER_REQUIRED_COUNT = 30;
         public const float FEVER_DURATION = 10f;
         public const float FEVER_SCORE_MULTIPLIER = 2f;
         
+        // スコア
         public const int BASE_SCORE_PER_TSUM = 10;
         public const int CHAIN_BONUS_PER_TSUM = 5;
         
-        public static readonly float[] COMBO_MULTIPLIERS = { 1f, 1f, 1f, 1f, 1f, 1.5f, 1.5f, 1.5f, 1.5f, 1.5f, 2f, 2f, 2f, 2f, 2f, 2f, 2f, 2f, 2f, 2f, 3f };
+        // コンボ倍率
+        public static readonly float[] COMBO_MULTIPLIERS = { 
+            1f, 1f, 1f, 1f, 1f, 
+            1.5f, 1.5f, 1.5f, 1.5f, 1.5f, 
+            2f, 2f, 2f, 2f, 2f, 2f, 2f, 2f, 2f, 2f, 
+            3f 
+        };
         
+        // ツム設定
         public const int TSUM_TYPES = 5;
         public const int GRID_WIDTH = 7;
         public const int GRID_HEIGHT = 9;
         public const float TSUM_SIZE = 120f;
         public const float TSUM_SPACING = 10f;
         
+        // アニメーション
         public const float TSUM_DROP_SPEED = 800f;
         public const float TSUM_POP_DURATION = 0.3f;
         public const float TSUM_SPAWN_DELAY = 0.05f;
         
+        // シーン名
         public const string SCENE_TITLE = "TitleScene";
         public const string SCENE_HOWTOPLAY = "HowToPlayScene";
         public const string SCENE_GAME = "GameScene";
         
+        // PlayerPrefsキー
         public const string KEY_HIGH_SCORE = "HighScore";
         public const string KEY_BGM_VOLUME = "BGMVolume";
         public const string KEY_SE_VOLUME = "SEVolume";

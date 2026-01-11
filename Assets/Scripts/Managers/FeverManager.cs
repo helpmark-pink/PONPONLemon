@@ -1,63 +1,72 @@
 using UnityEngine;
-using UnityEngine.UI;
-using System.Collections;
 using PONPONLemon.Core;
 
 namespace PONPONLemon.Managers
 {
     public class FeverManager : MonoBehaviour
     {
-        [Header("Fever Settings")]
-        [SerializeField] private float feverDuration = 10f;
-        [SerializeField] private float feverGaugeMax = 100f;
-        [SerializeField] private float gaugeIncreasePerTsum = 5f;
+        public static FeverManager Instance { get; private set; }
         
-        [Header("UI")]
-        [SerializeField] private Slider feverGaugeSlider;
-        [SerializeField] private GameObject feverEffect;
+        [Header("フィーバー設定")]
+        [SerializeField] private int requiredCount = GameConstants.FEVER_REQUIRED_COUNT;
+        [SerializeField] private float feverDuration = GameConstants.FEVER_DURATION;
         
-        private float currentGauge = 0f;
+        private int currentCount = 0;
+        private float feverTimer = 0f;
         private bool isFeverActive = false;
-        private bool isEnabled = true;
-        private int feverCount = 0;
         
+        public int CurrentCount => currentCount;
+        public int RequiredCount => requiredCount;
+        public float FeverTimer => feverTimer;
+        public float FeverDuration => feverDuration;
         public bool IsFeverActive => isFeverActive;
-        public float FeverGaugePercent => currentGauge / feverGaugeMax;
-        public float GaugeRatio => currentGauge / feverGaugeMax;
-        public int FeverCount => feverCount;
+        public float FeverRatio => (float)currentCount / requiredCount;
+        public float FeverTimeRatio => feverTimer / feverDuration;
         
+        // イベント
+        public System.Action<int> OnFeverCountChanged;
         public System.Action OnFeverStart;
         public System.Action OnFeverEnd;
-        public System.Action<int> OnGaugeChanged;
         public System.Action<float> OnFeverTimeChanged;
         
-        private void Start()
+        private void Awake()
         {
-            UpdateUI();
-            if (feverEffect != null)
-                feverEffect.SetActive(false);
+            if (Instance == null)
+            {
+                Instance = this;
+            }
+            else
+            {
+                Destroy(gameObject);
+            }
         }
         
-        public void SetEnabled(bool enabled)
+        private void Update()
         {
-            isEnabled = enabled;
-        }
-        
-        public void AddGauge(int amount)
-        {
-            AddFeverGauge(amount);
-        }
-        
-        public void AddFeverGauge(int tsumCount)
-        {
-            if (isFeverActive || !isEnabled) return;
+            if (!isFeverActive) return;
             
-            currentGauge += gaugeIncreasePerTsum * tsumCount;
-            currentGauge = Mathf.Min(currentGauge, feverGaugeMax);
-            UpdateUI();
-            OnGaugeChanged?.Invoke((int)currentGauge);
+            if (GameManager.Instance != null && !GameManager.Instance.IsPlaying())
+            {
+                return;
+            }
             
-            if (currentGauge >= feverGaugeMax)
+            feverTimer -= Time.deltaTime;
+            OnFeverTimeChanged?.Invoke(feverTimer);
+            
+            if (feverTimer <= 0)
+            {
+                EndFever();
+            }
+        }
+        
+        public void AddCount(int count)
+        {
+            if (isFeverActive) return;
+            
+            currentCount += count;
+            OnFeverCountChanged?.Invoke(currentCount);
+            
+            if (currentCount >= requiredCount)
             {
                 StartFever();
             }
@@ -65,64 +74,38 @@ namespace PONPONLemon.Managers
         
         public void StartFever()
         {
-            if (isFeverActive) return;
-            
             isFeverActive = true;
-            feverCount++;
-            currentGauge = feverGaugeMax;
-            UpdateUI();
-            
-            if (feverEffect != null)
-                feverEffect.SetActive(true);
+            feverTimer = feverDuration;
+            currentCount = 0;
             
             OnFeverStart?.Invoke();
-            StartCoroutine(FeverTimer());
-        }
-        
-        private IEnumerator FeverTimer()
-        {
-            float elapsed = 0;
-            while (elapsed < feverDuration)
-            {
-                elapsed += Time.deltaTime;
-                currentGauge = feverGaugeMax * (1 - elapsed / feverDuration);
-                UpdateUI();
-                OnFeverTimeChanged?.Invoke(1 - elapsed / feverDuration);
-                yield return null;
-            }
+            OnFeverCountChanged?.Invoke(currentCount);
             
-            EndFever();
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.StartFever();
+            }
         }
         
-        private void EndFever()
+        public void EndFever()
         {
             isFeverActive = false;
-            currentGauge = 0;
-            UpdateUI();
-            OnGaugeChanged?.Invoke(0);
-            
-            if (feverEffect != null)
-                feverEffect.SetActive(false);
+            feverTimer = 0f;
             
             OnFeverEnd?.Invoke();
-        }
-        
-        private void UpdateUI()
-        {
-            if (feverGaugeSlider != null)
-                feverGaugeSlider.value = currentGauge / feverGaugeMax;
+            
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.EndFever();
+            }
         }
         
         public void ResetFever()
         {
-            StopAllCoroutines();
             isFeverActive = false;
-            currentGauge = 0;
-            feverCount = 0;
-            UpdateUI();
-            
-            if (feverEffect != null)
-                feverEffect.SetActive(false);
+            feverTimer = 0f;
+            currentCount = 0;
+            OnFeverCountChanged?.Invoke(currentCount);
         }
     }
 }
